@@ -38,7 +38,7 @@
     const socket = io('https://node-service-tavat.dev.idea2mvp.in', { autoConnect: false });
     // const socket = io('http://localhost:8000', { autoConnect: false });
     // Separate socket connection for chat list (namespace: /chat-list)
-    const chatListSocket = io('https://node-service-tavat.dev.idea2mvp.in', { autoConnect: false });
+    const chatListSocket = io('https://node-service-tavat.dev.idea2mvp.in/chat-list', { autoConnect: false });
 
     let currentRoomId = null;
     let currentChatType = 'direct';
