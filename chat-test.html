@@ -33,12 +33,12 @@
 
   <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
   <script>
-    const socket = io('http://localhost:8000', { autoConnect: false });
+    const socket = io('https://node-service-tavat.dev.idea2mvp.in', { autoConnect: false });
     const senderId = document.getElementById('senderId')?.value?.trim();
     if (!senderId) {
       alert('Please enter a Sender ID to start seeing the chat list.');
     }
-    const chatListSocket = io('http://localhost:8000/chat-list', {
+    const chatListSocket = io('https://node-service-tavat.dev.idea2mvp.in/chat-list', {
       autoConnect: false,
       query: {
         userId: senderId
