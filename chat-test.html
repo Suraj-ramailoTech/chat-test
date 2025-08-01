@@ -18,7 +18,6 @@
 
   <button onclick="joinRoom()">Join Chat</button>
   <button onclick="fetchUserChats()">Show My Chats</button>
-  <button onclick="registerForNotifications()">Enable Notifications</button>
 
   <div id="chat" style="margin-top:20px; display:none;">
     <div id="messages" style="border:1px solid #aaa; padding:10px; height:200px; overflow:auto;"></div>
@@ -34,405 +33,163 @@
 
   <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
   <script>
-    // Main chat socket connection (default namespace)
-    const socket = io('https://node-service-tavat.dev.idea2mvp.in', { autoConnect: false });
-    // const socket = io('http://localhost:8000', { autoConnect: false });
-    // Separate socket connection for chat list (namespace: /chat-list)
-    const chatListSocket = io('https://node-service-tavat.dev.idea2mvp.in/chat-list', { autoConnect: false });
+    const socket = io('http://localhost:8000', { autoConnect: false });
+    const senderId = document.getElementById('senderId')?.value?.trim();
+    if (!senderId) {
+      alert('Please enter a Sender ID to start seeing the chat list.');
+    }
+    const chatListSocket = io('http://localhost:8000/chat-list', {
+      autoConnect: false,
+      query: {
+        userId: senderId
+      }
+    });
+
+    chatListSocket.connect();
+
 
     let currentRoomId = null;
     let currentChatType = 'direct';
     let notificationCount = 0;
-    let chatRoomsData = {}; // Store chat rooms data for real-time updates
+    let chatRoomsData = {}; 
 
-    socket.on('connect', () => {
-      console.log('Socket connected:', socket.id);
-    });
+    socket.on('connect', () => console.log('Main socket connected:', socket.id));
+    socket.on('disconnect', () => console.log('Main socket disconnected'));
 
-    socket.on('disconnect', () => {
-      console.log('Socket disconnected');
-    });
+    chatListSocket.on('connect', () => console.log('Chat-list socket connected:', chatListSocket.id));
+    chatListSocket.on('disconnect', () => console.log('Chat‑list socket disconnected'));
 
-    chatListSocket.on('connect', () => {
-      console.log('ChatListSocket connected:', chatListSocket.id);
-    });
-    chatListSocket.on('disconnect', () => {
-      console.log('ChatListSocket disconnected');
-    });
-    chatListSocket.on('connect_error', (err) => {
-      console.error('ChatListSocket connection error:', err);
-    });
-
-    // NEW: Listen for new room creation notifications
-    socket.on('newRoomCreated', (roomData) => {
-      console.log('New room created:', roomData);
-      
-      // Add to our local chat rooms data
+    // Listen only on chatListSocket for new room and message notifications
+    chatListSocket.on('newRoomCreated', roomData => {
+      console.log('New room from chat-list:', roomData);
       chatRoomsData[roomData.roomId] = roomData;
-      
-      // Update chat list display
       updateChatListDisplay();
-      
-      // Show notification
-      showNotification(`New chat room created!`, 'info');
-      
-      // Update notification count
+      showNotification('New chat room created!', 'info');
       updateNotificationBadge(1);
     });
 
-    // NEW: Listen for chat list updates (new messages)
-    socket.on('chatListUpdate', (notificationData) => {
-      console.log('Chat list update:', notificationData);
-      
-      const { roomId, lastText, userName, created_at } = notificationData;
-      console.log("chat room data ", chatRoomsData[roomId])
-      // Update the last message in our local data
+    chatListSocket.on('chatListUpdate', notificationData => {
+      console.log('Chat list update from chat-list:', notificationData);
+      const { roomId, lastText, userName } = notificationData;
       if (chatRoomsData[roomId]) {
-        // Update the last message for all display users in this room
         chatRoomsData[roomId].displayUsers.forEach(userObj => {
-          userObj['userName'] = userName; // Update username
-          userObj['lastText'] = lastText;
+          userObj.userName = userName;
+          userObj.lastText = lastText;
         });
-        
-        // Update chat list display
         updateChatListDisplay();
       }
-      
-      // Show notification if not in the current room
       if (currentRoomId !== roomId) {
         showNotification(`${userName}: ${lastText}`, 'message');
         updateNotificationBadge(1);
       }
     });
 
-    // NEW: Listen for chat list updates from chatListSocket as well
-    chatListSocket.on('chatListUpdate', (notificationData) => {
-      console.log('Chat list update from chat-list namespace:', notificationData);
-      
-      const { roomId, lastMessage, senderName, timestamp } = notificationData;
-      
-      // Update the last message in our local data
-      if (chatRoomsData[roomId]) {
-        chatRoomsData[roomId].displayUsers.forEach(userObj => {
-          const username = Object.keys(userObj)[0];
-          userObj[username] = lastMessage;
-        });
-        
-        updateChatListDisplay();
-      }
-      
-      // Show notification if not in the current room
-      if (currentRoomId !== roomId) {
-        showNotification(`${senderName}: ${lastMessage}`, 'message');
-        updateNotificationBadge(1);
-      }
-    });
-
-    chatListSocket.on('newRoomCreated', (roomData) => {
-      console.log('New room created from chat-list namespace:', roomData);
-      
-      chatRoomsData[roomData.roomId] = roomData;
-      updateChatListDisplay();
-      showNotification(`New chat room created!`, 'info');
-      updateNotificationBadge(1);
-    });
-
-    // NEW: Function to register for notifications
-    function registerForNotifications() {
-      const senderId = document.getElementById('senderId').value.trim();
-      if (!senderId) {
-        alert('Enter Sender ID first');
-        return;
-      }
-
-      if (!socket.connected) socket.connect();
-      if (!chatListSocket.connected) chatListSocket.connect();
-
-      // Register on both sockets
-      socket.emit('registerForNotifications', { userId: senderId });
-      
-      showNotification('Notifications enabled!', 'success');
-      console.log('Registered for notifications:', senderId);
-    }
-
-    // NEW: Function to show notifications
-    function showNotification(message, type = 'info') {
-      const notificationArea = document.getElementById('notificationArea');
-      
-      const notification = document.createElement('div');
-      notification.style.cssText = `
-        background: ${type === 'message' ? '#4CAF50' : type === 'success' ? '#2196F3' : '#FF9800'};
-        color: white;
-        padding: 12px;
-        margin-bottom: 10px;
-        border-radius: 6px;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.2);
-        font-size: 14px;
-        animation: slideIn 0.3s ease-out;
-      `;
-      
-      notification.textContent = message;
-      notificationArea.appendChild(notification);
-      
-      // Auto-remove after 5 seconds
-      setTimeout(() => {
-        if (notification.parentNode) {
-          notification.remove();
-        }
-      }, 5000);
-      
-      // Add click to dismiss
-      notification.onclick = () => notification.remove();
-    }
-
-    // NEW: Function to update notification badge
-    function updateNotificationBadge(increment = 0) {
-      notificationCount += increment;
-      const badge = document.getElementById('notificationBadge');
-      
-      if (notificationCount > 0) {
-        badge.textContent = notificationCount;
-        badge.style.display = 'inline';
-      } else {
-        badge.style.display = 'none';
-      }
-    }
-
-    // NEW: Function to update chat list display from local data
-    function updateChatListDisplay() {
-      const chatListElem = document.getElementById('chatList');
-      chatListElem.innerHTML = '';
-      
-      const chatRoomsList = Object.values(chatRoomsData);
-      
-      if (chatRoomsList.length === 0) {
-        chatListElem.innerHTML = '<li>No chats found</li>';
-        return;
-      }
-
-      chatRoomsList.forEach(chatRoom => {
-        const { roomId, displayUsers, participantIds, chatType } = chatRoom;
-        if (!displayUsers || displayUsers.length === 0) return;
-
-        // Container for chat room
-        const li = document.createElement('li');
-        li.style.cursor = 'pointer';
-        li.style.border = '1px solid #ccc';
-        li.style.marginBottom = '10px';
-        li.style.padding = '10px';
-        li.style.borderRadius = '6px';
-        li.style.backgroundColor = '#f9f9f9';
-
-        // Room header info
-        const headerDiv = document.createElement('div');
-        headerDiv.style.marginBottom = '8px';
-        headerDiv.innerHTML = `
-          <strong>Room ID:</strong> ${roomId} &nbsp;&nbsp; 
-          <strong>Type:</strong> ${chatType} &nbsp;&nbsp; 
-          <strong>Participants:</strong> ${participantIds.join(', ')}
-        `;
-        li.appendChild(headerDiv);
-
-        // User + last message container
-        const usersDiv = document.createElement('div');
-        usersDiv.style.display = 'flex';
-        usersDiv.style.flexDirection = 'column';
-        usersDiv.style.rowGap = '6px';
-
-        displayUsers.forEach(userObj => {
-          const username = userObj['userName'];
-          const lastMsg = userObj['lastText'];
-
-          const userRow = document.createElement('div');
-          userRow.style.display = 'flex';
-          userRow.style.justifyContent = 'space-between';
-          userRow.style.backgroundColor = '#fff';
-          userRow.style.padding = '6px 10px';
-          userRow.style.borderRadius = '4px';
-          userRow.style.boxShadow = '0 1px 3px rgba(0,0,0,0.1)';
-          userRow.style.fontFamily = 'Arial, sans-serif';
-          userRow.style.fontSize = '14px';
-
-          const userSpan = document.createElement('span');
-          userSpan.textContent = username;
-          userSpan.style.fontWeight = '600';
-          userSpan.style.color = '#333';
-
-          const msgSpan = document.createElement('span');
-          msgSpan.textContent = lastMsg;
-          msgSpan.style.color = '#666';
-          msgSpan.style.marginLeft = '15px';
-          msgSpan.style.flexGrow = '1';
-          msgSpan.style.textAlign = 'right';
-          msgSpan.style.whiteSpace = 'nowrap';
-          msgSpan.style.overflow = 'hidden';
-          msgSpan.style.textOverflow = 'ellipsis';
-          msgSpan.title = lastMsg;
-
-          userRow.appendChild(userSpan);
-          userRow.appendChild(msgSpan);
-          usersDiv.appendChild(userRow);
-        });
-
-        li.appendChild(usersDiv);
-
-        li.onclick = () => {
-          const senderId = document.getElementById('senderId').value.trim();
-          if (displayUsers.length > 0) {
-            const receiverId = participantIds.find(id => id !== senderId);
-            if (!receiverId) {
-              alert("No valid receiver ID found for this chat room.");
-              return;
-            }
-
-            document.getElementById('receiverId').value = receiverId;
-            document.getElementById('chatType').value = chatType || 'direct';
-          }
-          document.getElementById('senderId').value = senderId;
-
-          // Reset notification count when entering a room
-          notificationCount = 0;
-          updateNotificationBadge();
-
-          joinRoom(roomId);
-        }
-
-        chatListElem.appendChild(li);
-      });
-    }
-
-    // Render a single message to the messages div
-
-    function renderMessage(msg) {
-      const msgBox = document.getElementById('messages');
-      const item = document.createElement('div');
-
-      // Compute time since message was sent
-      let duration = '';
-      if (msg.createdAt) {
-        let msgTime = new Date(msg.createdAt);
-        let now = new Date();
-        let diffMs = now - msgTime;
-        let diffMins = Math.floor(diffMs / 60000);
-        let diffHours = Math.floor(diffMins / 60);
-        if (diffHours > 0) {
-          duration = diffHours + 'h ago';
-        } else if (diffMins > 0) {
-          duration = diffMins + 'm ago';
-        } else {
-          duration = 'just now';
-        }
-      }
-
-      item.textContent = `[${msg.username}] ${msg.text}` + (duration ? `  (${duration})` : '');
-      msgBox.appendChild(item);
-      msgBox.scrollTop = msgBox.scrollHeight;
-    }
-
-    socket.on('message', (msg) => {
-      renderMessage(msg);
-    });
-
     function joinRoom(roomId = null) {
       const senderId = document.getElementById('senderId').value.trim();
       const receiverId = document.getElementById('receiverId').value.trim();
       const chatType = document.getElementById('chatType').value;
-
-      if (!senderId || !receiverId) {
-        alert('Both Sender and Receiver IDs are required!');
-        return;
-      }
-
+      if (!senderId || !receiverId) return alert('Both Sender and Receiver IDs are required!');
       if (!socket.connected) socket.connect();
-
-      const joinPayload = { senderId, receiverId, roomType: chatType };
-      if (roomId) {
-        joinPayload.roomId = roomId;
-      }
-
-      socket.emit('join', joinPayload, (err, data) => {
-        if (err) {
-          alert('Join Error: ' + (err.message || err));
-          return;
-        }
+      let payload = { senderId, receiverId, roomType: chatType };
+      if (roomId) payload.roomId = roomId;
+      socket.emit('join', payload, (err, data) => {
+        if (err) return alert('Join Error: ' + (err.message || err));
         currentRoomId = data.room;
         currentChatType = chatType;
-        console.log('Joined room:', currentRoomId, '| Type:', currentChatType);
         document.getElementById('chat').style.display = 'block';
-
-        // Clear old messages
-        const msgBox = document.getElementById('messages');
-        msgBox.innerHTML = '';
-
-        // Render chat history if any
-        if (data.messages && data.messages.length > 0) {
-          data.messages.forEach(renderMessage);
-        }
+        document.getElementById('messages').innerHTML = '';
+        data.messages?.forEach(renderMessage);
       });
     }
+
+    socket.on('message', msg => renderMessage(msg));
 
     function sendMessage() {
       const message = document.getElementById('messageInput').value.trim();
       const senderId = document.getElementById('senderId').value.trim();
-
       if (!message || !currentRoomId) return;
-
-      socket.emit('sendMessage', {
-        roomId: currentRoomId,
-        message,
-        senderId,
-        type: currentChatType
-      }, () => {
+      socket.emit('sendMessage', { roomId: currentRoomId, message, senderId }, () => {
         document.getElementById('messageInput').value = '';
       });
     }
 
-    // MODIFIED: Fetch user's chat rooms list using the chat-list namespace socket
     function fetchUserChats() {
-    const senderId = document.getElementById('senderId').value.trim();
-    if (!senderId) {
-      alert('Enter Sender ID to fetch chats');
-      return;
-    }
-
-    if (!chatListSocket.connected) chatListSocket.connect();
-
-    chatListSocket.emit('init', { userId: senderId }, (err, response) => {
-      if (err) {
-        alert('Error fetching chats: ' + err.message || err);
-        return;
-      }
-
-      // Store chat rooms data locally for real-time updates
-      chatRoomsData = {};
-      if (response.chats && response.chats.length > 0) {
-        response.chats.forEach(chatRoom => {
+      const senderId = document.getElementById('senderId').value.trim();
+      if (!senderId) return alert('Enter Sender ID to fetch chats');
+      if (!chatListSocket.connected) chatListSocket.connect();
+      chatListSocket.emit('init', { userId: senderId }, (err, response) => {
+        if (err) return alert('Error fetching chats: ' + (err.message || err));
+        chatRoomsData = {};
+        response.chats?.forEach(chatRoom => {
           chatRoomsData[chatRoom.roomId] = chatRoom;
         });
-      }
+        updateChatListDisplay();
+      });
+    }
 
-      // Update display
-      updateChatListDisplay();
-    });
-  }
+    function updateChatListDisplay() {
+      const ul = document.getElementById('chatList');
+      ul.innerHTML = '';
+      const rooms = Object.values(chatRoomsData);
+      if (!rooms.length) return ul.innerHTML = '<li>No chats found</li>';
+      rooms.forEach(cr => {
+        const li = document.createElement('li');
+        li.style = 'cursor:pointer; border:1px solid #ccc; margin:6px 0; padding:8px; border-radius:4px; background:#f9f9f9;';
+        li.innerHTML = `
+          <div><strong>Room:</strong> ${cr.roomId} &nbsp; <strong>Type:</strong> ${cr.chatType}</div>
+        `;
+        cr.displayUsers.forEach(u => {
+          const div = document.createElement('div');
+          div.style = 'background:#fff; padding:4px 8px; margin:4px 0; border-radius:3px;';
+          div.textContent = `${u.userName}: ${u.lastText || ''}`;
+          li.appendChild(div);
+        });
+        li.onclick = () => {
+          const senderId = document.getElementById('senderId').value.trim();
+          const otherId = cr.participantIds.find(id => id !== senderId);
+          if (otherId) document.getElementById('receiverId').value = otherId;
+          document.getElementById('chatType').value = cr.chatType || 'direct';
+          notificationCount = 0;
+          updateNotificationBadge();
+          joinRoom(cr.roomId);
+        };
+        ul.appendChild(li);
+      });
+    }
 
+    function renderMessage(msg) {
+      const box = document.getElementById('messages');
+      const div = document.createElement('div');
+      const when = msg.createdAt ? (() => {
+        const diff = new Date() - new Date(msg.createdAt);
+        const mins = Math.floor(diff / 60000);
+        return mins > 59 ? Math.floor(mins/60) + 'h ago' : (mins > 0 ? mins+'m ago' : 'just now');
+      })() : '';
+      div.textContent = `[${msg.username}] ${msg.text}` + (when ? ` (${when})` : '');
+      box.appendChild(div);
+      box.scrollTop = box.scrollHeight;
+    }
 
-    // Add CSS animation for notifications
+    function showNotification(text, type = 'info') {
+      const area = document.getElementById('notificationArea');
+      const div = document.createElement('div');
+      div.style = `background:${type==='message'?'#4CAF50':type==='success'?'#2196F3':'#FF9800'}; color:white; padding:10px; margin-bottom:8px; border-radius:5px;`;
+      div.textContent = text;
+      div.onclick = () => div.remove();
+      area.appendChild(div);
+      setTimeout(() => div.remove(), 5000);
+    }
+
+    function updateNotificationBadge(inc = 0) {
+      notificationCount += inc;
+      const badge = document.getElementById('notificationBadge');
+      badge.textContent = notificationCount;
+      badge.style.display = notificationCount > 0 ? 'inline' : 'none';
+    }
+
     document.head.insertAdjacentHTML('beforeend', `
-      <style>
-        @keyframes slideIn {
-          from {
-            transform: translateX(100%);
-            opacity: 0;
-          }
-          to {
-            transform: translateX(0);
-            opacity: 1;
-          }
-        }
-      </style>
+      <style>@keyframes slideIn { from {transform:translateX(100%);opacity:0;} to{transform:translateX(0);opacity:1;} }</style>
     `);
-
   </script>
 </body>
 </html>
