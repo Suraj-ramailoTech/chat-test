@@ -138,10 +138,27 @@
         li.innerHTML = `
           <div><strong>Room:</strong> ${cr.roomId} &nbsp; <strong>Type:</strong> ${cr.chatType}</div>
         `;
+
+        // Add participant IDs display
+        const participantsDiv = document.createElement('div');
+        participantsDiv.style = 'font-size: 12px; color: #666; margin-bottom: 6px;';
+        participantsDiv.textContent = `Participants: ${cr.participantIds?.join(', ') || 'N/A'}`;
+        li.appendChild(participantsDiv);
+
         cr.displayUsers.forEach(u => {
           const div = document.createElement('div');
-          div.style = 'background:#fff; padding:4px 8px; margin:4px 0; border-radius:3px;';
-          div.textContent = `${u.userName}: ${u.lastText || ''}`;
+          div.style = 'background:#fff; padding:4px 8px; margin:4px 0; border-radius:3px; display:flex; align-items:center; gap:8px;';
+
+          const avatar = document.createElement('img');
+          avatar.src = u.profilePic || 'https://via.placeholder.com/32';
+          avatar.alt = u.userName;
+          avatar.style = 'width:32px; height:32px; border-radius:50%; object-fit:cover;';
+
+          const span = document.createElement('span');
+          span.textContent = `${u.userName}: ${u.lastText || ''}`;
+
+          div.appendChild(avatar);
+          div.appendChild(span);
           li.appendChild(div);
         });
         li.onclick = () => {
@@ -156,6 +173,8 @@
         ul.appendChild(li);
       });
     }
+
+
 
     function renderMessage(msg) {
       const box = document.getElementById('messages');
